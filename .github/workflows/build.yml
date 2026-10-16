@@ -13,6 +13,8 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # Bit eksekusi gradlew hilang jika zip diekstrak di Windows / diunggah lewat web GitHub.
+      - run: chmod +x gradlew
       - run: ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
