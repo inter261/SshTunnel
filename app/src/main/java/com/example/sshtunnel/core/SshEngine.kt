@@ -14,6 +14,7 @@ import net.schmizz.sshj.transport.compression.NoneCompression
 import net.schmizz.sshj.transport.compression.ZlibCompression
 import net.schmizz.sshj.transport.verification.HostKeyVerifier
 import net.schmizz.sshj.userauth.UserAuthException
+import net.schmizz.sshj.userauth.method.AuthKeyboardInteractive
 import net.schmizz.sshj.userauth.method.PasswordResponseProvider
 import net.schmizz.sshj.userauth.password.PasswordUtils
 import java.io.Closeable
@@ -118,9 +119,11 @@ class SshEngine(
             } catch (e: UserAuthException) {
                 // Sebagian server hanya menawarkan keyboard-interactive untuk login password.
                 try {
-                    ssh.authKeyboardInteractive(
+                    ssh.auth(
                         profile.username,
-                        PasswordResponseProvider(PasswordUtils.createOneOff(profile.password.toCharArray())),
+                        AuthKeyboardInteractive(
+                            PasswordResponseProvider(PasswordUtils.createOneOff(profile.password.toCharArray())),
+                        ),
                     )
                 } catch (_: UserAuthException) {
                     throw e
