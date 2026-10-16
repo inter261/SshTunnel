@@ -18,7 +18,7 @@ android {
         // ABI yang dibangun untuk library native tun2socks.
         // Hapus ABI yang tidak diperlukan supaya build lebih cepat dan APK lebih kecil.
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             ndkBuild {
