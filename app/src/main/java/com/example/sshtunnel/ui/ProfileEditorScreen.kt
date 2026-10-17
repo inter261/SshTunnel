@@ -31,12 +31,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.sshtunnel.core.AccountParser
 import com.example.sshtunnel.data.AuthType
 import com.example.sshtunnel.data.SshProfile
 
@@ -71,6 +73,33 @@ fun ProfileEditorScreen(
     var confirmDelete by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onCancel)
+
+    // Tempel akun satu baris: host:port@username:password
+    var accountText by remember { mutableStateOf("") }
+    var accountNote by remember { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+
+    fun applyAccount(text: String) {
+        val account = AccountParser.parse(text)
+        if (account == null) {
+            accountNote = "Format tidak dikenali. Contoh: host:port@username:password"
+            return
+        }
+        host = account.host
+        port = account.port.toString()
+        username = account.username
+        password = account.password
+        authType = AuthType.PASSWORD
+        if (name.isBlank()) name = account.host
+        accountText = ""
+        error = null
+        accountNote = "Terisi: ${account.username}@${account.host}:${account.port}" +
+            if (account.port == 80) {
+                ". Port 80 biasanya HTTP/WebSocket, jadi pilih mode Payload HTTP di bagian transport."
+            } else {
+                ""
+            }
+    }
 
     // Memilih file private key: isinya dibaca ke dalam form, tidak disalin ke tempat lain.
     val pickKey = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -153,6 +182,25 @@ fun ProfileEditorScreen(
         ) {
             error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            }
+
+            Text("Tempel akun", style = MaterialTheme.typography.titleSmall)
+            OutlinedTextField(
+                value = accountText, onValueChange = { accountText = it; accountNote = null },
+                label = { Text("host:port@username:password") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { applyAccount(clipboard.getText()?.text.orEmpty()) }) {
+                    Text("Tempel dari clipboard")
+                }
+                Button(onClick = { applyAccount(accountText) }, enabled = accountText.isNotBlank()) {
+                    Text("Isi otomatis")
+                }
+            }
+            accountNote?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             OutlinedTextField(
