@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -61,6 +62,11 @@ fun ProfileEditorScreen(
     var compression by remember { mutableStateOf(initial.compression) }
     var keepAlive by remember { mutableStateOf(initial.keepAliveSeconds.toString()) }
     var dns by remember { mutableStateOf(initial.dnsServer) }
+    var mode by remember { mutableStateOf(TransportMode.from(initial)) }
+    var sni by remember { mutableStateOf(initial.sni) }
+    var payload by remember { mutableStateOf(initial.payload) }
+    var proxyHost by remember { mutableStateOf(initial.proxyHost) }
+    var proxyPort by remember { mutableStateOf(initial.proxyPort.toString()) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
@@ -109,6 +115,11 @@ fun ProfileEditorScreen(
             compression = compression,
             keepAliveSeconds = keepAlive.trim().toIntOrNull() ?: -1,
             dnsServer = dns.trim(),
+            useTls = mode.usesTls,
+            sni = if (mode.usesTls) sni.trim() else "",
+            payload = if (mode.usesPayload) payload else "", // baris kosong di akhir payload itu penting, jangan di-trim
+            proxyHost = if (mode.usesPayload) proxyHost.trim() else "",
+            proxyPort = proxyPort.trim().toIntOrNull() ?: 8080,
             // Server berubah = fingerprint lama tidak berlaku lagi.
             trustedHostKey = if (host.trim() == initial.host && port.trim().toIntOrNull() == initial.port) {
                 initial.trustedHostKey
@@ -209,6 +220,67 @@ fun ProfileEditorScreen(
                 )
             }
 
+            Text("Koneksi ke server (transport)", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TransportMode.entries.forEach { option ->
+                    FilterChip(
+                        selected = mode == option,
+                        onClick = {
+                            mode = option
+                            // Isi payload contoh saat pertama memilih mode yang memakai payload.
+                            if (option.usesPayload && payload.isBlank()) payload = PAYLOAD_WEBSOCKET
+                        },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            Text(
+                mode.hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (mode.usesTls) {
+                OutlinedTextField(
+                    value = sni, onValueChange = { sni = it },
+                    label = { Text("SNI (kosongkan = pakai host)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (mode.usesPayload) {
+                OutlinedTextField(
+                    value = payload, onValueChange = { payload = it },
+                    label = { Text("Payload") },
+                    minLines = 3, maxLines = 8,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { payload = PAYLOAD_WEBSOCKET }) { Text("Contoh WebSocket") }
+                    OutlinedButton(onClick = { payload = PAYLOAD_CONNECT }) { Text("Contoh CONNECT") }
+                }
+                Text(
+                    "Placeholder: [host] [port] [host_port] [protocol] [crlf] [cr] [lf] [split] " +
+                        "([split] = kirim bagian berikutnya di paket terpisah).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = proxyHost, onValueChange = { proxyHost = it },
+                        label = { Text("Proxy (opsional)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = proxyPort, onValueChange = { proxyPort = it.filter(Char::isDigit).take(5) },
+                        label = { Text("Port") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(0.4f),
+                    )
+                }
+            }
+
             Text("Lanjutan", style = MaterialTheme.typography.titleSmall)
             OutlinedTextField(
                 value = dns, onValueChange = { dns = it },
@@ -265,3 +337,25 @@ fun ProfileEditorScreen(
 }
 
 private const val MAX_KEY_BYTES = 64 * 1024
+
+private const val PAYLOAD_WEBSOCKET =
+    "GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]"
+private const val PAYLOAD_CONNECT =
+    "CONNECT [host_port] HTTP/1.1[crlf]Host: [host][crlf][crlf]"
+
+/** Pilihan cepat cara menjangkau server SSH. Menentukan field mana yang tampil dan dipakai. */
+private enum class TransportMode(val label: String, val usesTls: Boolean, val usesPayload: Boolean, val hint: String) {
+    DIRECT("Langsung", false, false, "Koneksi SSH biasa ke host dan port di atas."),
+    TLS("SSL/TLS", true, false, "SSH dibungkus TLS (seperti stunnel) dengan SNI yang bisa diatur. Server harus mendengarkan TLS di port itu."),
+    PAYLOAD("Payload HTTP", false, true, "Mengirim teks HTTP dulu, menunggu balasan (101/200), lalu SSH berjalan di koneksi yang sama."),
+    TLS_PAYLOAD("SSL + Payload", true, true, "TLS dengan SNI sendiri, lalu payload HTTP di dalamnya, lalu SSH.");
+
+    companion object {
+        fun from(profile: SshProfile) = when {
+            profile.useTls && profile.payload.isNotBlank() -> TLS_PAYLOAD
+            profile.useTls -> TLS
+            profile.payload.isNotBlank() -> PAYLOAD
+            else -> DIRECT
+        }
+    }
+}

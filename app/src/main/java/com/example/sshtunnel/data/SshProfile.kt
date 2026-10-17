@@ -1,5 +1,6 @@
 package com.example.sshtunnel.data
 
+import com.example.sshtunnel.core.TransportConfig
 import org.json.JSONObject
 import java.util.UUID
 
@@ -22,7 +23,25 @@ data class SshProfile(
     val dnsServer: String = "8.8.8.8",
     /** Fingerprint host key yang sudah dipercaya pengguna, format "SHA256:...". Kosong = belum dipercaya. */
     val trustedHostKey: String = "",
+    /** Bungkus koneksi dengan TLS (mirip stunnel), dengan SNI di bawah. */
+    val useTls: Boolean = false,
+    /** Nama yang dikirim di SNI. Kosong = pakai host. */
+    val sni: String = "",
+    /** Template payload HTTP; kosong = tanpa payload. Lihat PayloadBuilder untuk placeholder. */
+    val payload: String = "",
+    /** Jika diisi, koneksi dibuka ke proxy ini dulu (payload biasanya CONNECT [host_port]). */
+    val proxyHost: String = "",
+    val proxyPort: Int = 8080,
 ) {
+    val transport: TransportConfig
+        get() = TransportConfig(
+            useTls = useTls,
+            sni = sni.trim(),
+            payload = payload,
+            proxyHost = proxyHost.trim(),
+            proxyPort = proxyPort,
+        )
+
     val displayName: String
         get() = name.ifBlank { "${username.ifBlank { "?" }}@${host.ifBlank { "?" }}" }
 
@@ -36,6 +55,10 @@ data class SshProfile(
         authType == AuthType.PRIVATE_KEY && privateKey.isBlank() -> "Private key wajib diisi"
         keepAliveSeconds !in 5..300 -> "Keepalive harus 5–300 detik"
         dnsServer.isBlank() || dnsServer.any { it.isWhitespace() } -> "DNS server tidak valid"
+        sni.any { it.isWhitespace() } -> "SNI tidak boleh mengandung spasi"
+        proxyHost.isNotBlank() && payload.isBlank() -> "Proxy butuh payload (mis. CONNECT [host_port] HTTP/1.1)"
+        proxyHost.isNotBlank() && proxyPort !in 1..65535 -> "Port proxy harus 1–65535"
+        proxyHost.any { it.isWhitespace() } -> "Host proxy tidak boleh mengandung spasi"
         else -> null
     }
 
@@ -53,6 +76,11 @@ data class SshProfile(
         .put("keepAliveSeconds", keepAliveSeconds)
         .put("dnsServer", dnsServer)
         .put("trustedHostKey", trustedHostKey)
+        .put("useTls", useTls)
+        .put("sni", sni)
+        .put("payload", payload)
+        .put("proxyHost", proxyHost)
+        .put("proxyPort", proxyPort)
 
     companion object {
         fun fromJson(o: JSONObject): SshProfile = SshProfile(
@@ -69,6 +97,11 @@ data class SshProfile(
             keepAliveSeconds = o.optInt("keepAliveSeconds", 20),
             dnsServer = o.optString("dnsServer").ifBlank { "8.8.8.8" },
             trustedHostKey = o.optString("trustedHostKey"),
+            useTls = o.optBoolean("useTls", false),
+            sni = o.optString("sni"),
+            payload = o.optString("payload"),
+            proxyHost = o.optString("proxyHost"),
+            proxyPort = o.optInt("proxyPort", 8080),
         )
     }
 }

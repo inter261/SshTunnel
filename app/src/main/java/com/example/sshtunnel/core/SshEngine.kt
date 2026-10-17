@@ -72,7 +72,7 @@ class SshEngine(
         val ssh = SSHClient(config)
         // Sengaja tidak memakai ssh.timeout: itu menjadi SO_TIMEOUT dan akan memutus koneksi yang sedang idle.
         ssh.connectTimeout = CONNECT_TIMEOUT_MS
-        ssh.socketFactory = ProtectingSocketFactory(protect)
+        ssh.socketFactory = TransportSocketFactory(profile.transport, profile.host, profile.port, protect, log)
         ssh.addHostKeyVerifier(verifier)
         pending = ssh
         if (closed) {
@@ -232,33 +232,4 @@ class PinnedHostKeyVerifier(private val trusted: String) : HostKeyVerifier {
             return "SHA256:" + Base64.encodeToString(digest, Base64.NO_WRAP or Base64.NO_PADDING)
         }
     }
-}
-
-/** Membuat socket yang dikecualikan dari VPN (VpnService.protect) agar SSH tidak masuk ke tunnel-nya sendiri. */
-class ProtectingSocketFactory(private val protect: (Socket) -> Boolean) : SocketFactory() {
-    override fun createSocket(): Socket = Socket().also {
-        try {
-            protect(it)
-        } catch (_: Exception) {
-            // Aplikasi ini juga dikecualikan lewat addDisallowedApplication, jadi aman jika gagal.
-        }
-    }
-
-    override fun createSocket(host: String, port: Int): Socket =
-        createSocket().also { it.connect(InetSocketAddress(host, port)) }
-
-    override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
-        createSocket().also {
-            it.bind(InetSocketAddress(localHost, localPort))
-            it.connect(InetSocketAddress(host, port))
-        }
-
-    override fun createSocket(host: InetAddress, port: Int): Socket =
-        createSocket().also { it.connect(InetSocketAddress(host, port)) }
-
-    override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
-        createSocket().also {
-            it.bind(InetSocketAddress(localAddress, localPort))
-            it.connect(InetSocketAddress(address, port))
-        }
 }

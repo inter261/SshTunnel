@@ -11,6 +11,7 @@ aplikasi → TUN → tun2socks (native) → SOCKS5 lokal (127.0.0.1, auth acak) 
 | Bagian | Status |
 |---|---|
 | `Socks5Server` (auth, CONNECT, UDP-DNS, half-close, 1 MB data, close) | **Diuji**: 17 dari 17 tes lulus di JVM |
+| Lapisan transport (`Transport.kt`: payload, TLS+SNI, proxy, `[split]`) | **Diuji**: 25 dari 25 tes lulus di JVM (server palsu, termasuk TLS dengan sertifikat tidak cocok) |
 | Library native tun2socks | Sumber asli hev-socks5-tunnel 2.19.0, nama JNI dan format config dicocokkan dengan kodenya. **Belum dikompilasi.** |
 | Sisanya (sshj, VpnService, Compose, Keystore) | **Belum dikompilasi dan belum dijalankan.** Kemungkinan ada error kompilasi kecil atau bug saat uji pertama di perangkat. |
 
@@ -30,6 +31,31 @@ Tanpa Android Studio: dorong folder ini ke repo GitHub, lalu jalankan workflow *
 2. **Sambung**. Pertama kali, aplikasi menampilkan fingerprint host key. Cocokkan dengan server Anda
    (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`), baru percayai.
 3. Jika fingerprint berubah di kemudian hari, aplikasi memperingatkan (kemungkinan MITM) dan tidak sambung otomatis.
+
+## Transport "custom" (gaya HTTP Custom / SSH Custom)
+
+Di editor profil, bagian **Koneksi ke server (transport)**:
+
+| Mode | Yang terjadi |
+|---|---|
+| Langsung | TCP biasa ke server SSH |
+| SSL/TLS | TLS dengan SNI yang bisa diatur, lalu SSH di dalamnya (server harus melayani TLS, mis. stunnel/nginx) |
+| Payload HTTP | Kirim teks HTTP, tunggu balasan `101`/`200`, lalu SSH jalan di koneksi yang sama |
+| SSL + Payload | TLS dengan SNI sendiri, payload di dalamnya, lalu SSH |
+
+Payload mendukung placeholder `[host] [port] [host_port] [protocol] [crlf] [cr] [lf] [split]`
+(`[split]` = bagian berikutnya dikirim di paket TCP terpisah). **Proxy** opsional: TCP dibuka ke proxy itu, bukan ke server SSH.
+
+Contoh WebSocket: `GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf]Connection: Upgrade[crlf][crlf]`
+Contoh lewat proxy: `CONNECT [host_port] HTTP/1.1[crlf]Host: [host][crlf][crlf]`
+
+Catatan teknis:
+- Setelah balasan `101`, data diteruskan **mentah** (bukan frame WebSocket). Ini cocok dengan server SSH-over-WebSocket yang umum
+  (proxy yang hanya melakukan handshake lalu menyalurkan byte); server yang benar-benar memakai frame WebSocket belum didukung.
+- Jika server langsung membalas banner `SSH-2.0-...` tanpa header HTTP, itu juga diterima.
+- Sertifikat TLS **tidak diverifikasi** (pada SNI palsu sertifikat memang tidak cocok). Keutuhan tetap terjaga karena SSH di dalamnya
+  diverifikasi lewat host key yang dipin; TLS di sini hanya untuk menyamarkan. Karena itu, **cocokkan fingerprint host key dengan benar** saat pertama sambung.
+- **Belum ada**: SlowDNS/DNSTT, UDP custom, dan impor/ekspor file konfigurasi aplikasi lain.
 
 ## Syarat di server
 
