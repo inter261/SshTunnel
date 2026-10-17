@@ -158,6 +158,11 @@ class SshEngine(
         t is UserAuthException ->
             FatalTunnelException("Login ditolak server (username/password/key salah, atau metode tidak diizinkan)", t)
         timedOut -> IOException("Waktu habis saat handshake SSH (server tidak merespons)", t)
+        t is javax.net.ssl.SSLException -> IOException(
+            "Handshake TLS ditolak server. Penyebab umum: SNI kosong/salah (server CDN butuh nama domain yang valid), " +
+                "atau port ini bukan TLS (port 80 biasanya HTTP; pakai mode Payload HTTP). Detail: ${t.message?.lineSequence()?.firstOrNull()}",
+            t,
+        )
         t is UnknownHostException -> IOException("Host tidak ditemukan: ${profile.host}", t)
         t is ConnectException -> IOException("Tidak bisa terhubung ke ${profile.host}:${profile.port} (${t.message})", t)
         t is NoRouteToHostException -> IOException("Tidak ada rute ke ${profile.host}", t)

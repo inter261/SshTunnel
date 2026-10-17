@@ -346,7 +346,7 @@ private const val PAYLOAD_CONNECT =
 /** Pilihan cepat cara menjangkau server SSH. Menentukan field mana yang tampil dan dipakai. */
 private enum class TransportMode(val label: String, val usesTls: Boolean, val usesPayload: Boolean, val hint: String) {
     DIRECT("Langsung", false, false, "Koneksi SSH biasa ke host dan port di atas."),
-    TLS("SSL/TLS", true, false, "SSH dibungkus TLS (seperti stunnel) dengan SNI yang bisa diatur. Server harus mendengarkan TLS di port itu."),
+    TLS("SSL/TLS", true, false, "SSH dibungkus TLS (seperti stunnel) dengan SNI yang bisa diatur. Server harus melayani TLS di port itu (biasanya 443). Port 80 umumnya HTTP polos: pakai Payload HTTP. Isi SNI dengan nama domain, bukan IP."),
     PAYLOAD("Payload HTTP", false, true, "Mengirim teks HTTP dulu, menunggu balasan (101/200), lalu SSH berjalan di koneksi yang sama."),
     TLS_PAYLOAD("SSL + Payload", true, true, "TLS dengan SNI sendiri, lalu payload HTTP di dalamnya, lalu SSH.");
 

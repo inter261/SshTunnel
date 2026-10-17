@@ -72,6 +72,22 @@ object PayloadBuilder {
     }
 }
 
+/** Merapikan isian SNI/host dari pengguna dan mengenali IP literal (yang tidak boleh dikirim sebagai SNI). */
+object SniUtil {
+    /** Membuang skema (https://), path, dan ":port" yang sering ikut tertempel. IPv6 dibiarkan utuh. */
+    fun normalize(raw: String): String {
+        var v = raw.trim()
+        v = v.substringAfter("://", v)
+        v = v.substringBefore('/').substringBefore('?').substringBefore('#')
+        if (v.startsWith("[") && v.contains("]")) return v.substring(1, v.indexOf(']')) // [::1]:443
+        if (v.count { it == ':' } == 1) v = v.substringBefore(':') // host:port
+        return v.trimEnd('.')
+    }
+
+    fun isIpLiteral(value: String): Boolean =
+        value.contains(':') || Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(value)
+}
+
 /** Membuat [TransportSocket] sesuai konfigurasi, atau socket biasa jika koneksi langsung. */
 class TransportSocketFactory(
     private val config: TransportConfig,
@@ -152,8 +168,18 @@ class TransportSocket(
 
             var socket: Socket = raw
             if (config.useTls) {
-                val tlsHost = config.sni.ifBlank { config.proxyHost.ifBlank { sshHost } }
-                log("TLS (SNI: ${if (looksLikeIp(tlsHost)) "-" else tlsHost}) ...")
+                val sni = SniUtil.normalize(config.sni)
+                if (sni != config.sni.trim()) log("SNI dirapikan: \"${config.sni.trim()}\" -> \"$sni\"")
+                val tlsHost = sni.ifBlank { SniUtil.normalize(config.proxyHost).ifBlank { SniUtil.normalize(sshHost) } }
+                if (SniUtil.isIpLiteral(tlsHost)) {
+                    log("Peringatan: SNI \"$tlsHost\" berupa IP, jadi SNI TIDAK dikirim. " +
+                        "Server berbasis CDN (mis. CloudFront) menolak TLS tanpa SNI. Isi kolom SNI dengan nama domain.")
+                } else {
+                    log("TLS dengan SNI: $tlsHost")
+                }
+                if (target.port == 80) {
+                    log("Peringatan: port 80 biasanya HTTP polos, bukan TLS. Jika server memang HTTP/WebSocket, pakai mode \"Payload HTTP\".")
+                }
                 raw.soTimeout = HANDSHAKE_TIMEOUT_MS
                 socket = wrapTls(raw, tlsHost, target.port)
                 inner = socket
@@ -187,7 +213,7 @@ class TransportSocket(
     private fun wrapTls(raw: Socket, host: String, port: Int): SSLSocket {
         val context = SSLContext.getInstance("TLS")
         context.init(null, arrayOf(TrustAllManager), SecureRandom())
-        val useName = !looksLikeIp(host)
+        val useName = !SniUtil.isIpLiteral(host)
         // Argumen host menjadi SNI bawaan. IP literal tidak boleh dikirim sebagai SNI.
         val ssl = context.socketFactory.createSocket(raw, if (useName) host else sshHost, port, true) as SSLSocket
         try {
@@ -254,8 +280,6 @@ class TransportSocket(
             throw IOException("Payload ditolak: $statusLine")
         }
     }
-
-    private fun looksLikeIp(value: String) = value.contains(':') || Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(value)
 
     // ------------------------------------------------------------ delegasi ke socket sebenarnya
 
